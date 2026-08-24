@@ -1,0 +1,107 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Avoid re-triggering on issues opened/edited by bots (e.g. this workflow itself)
+    if: github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # required to add labels and post/update the diagnosis comment
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: claude-triage
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Bash(gh label list:*),Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh api:*)"
+
+          prompt: |
+            You are triaging issue #${{ github.event.issue.number }} in the
+            ${{ github.repository }} repository, a vanilla JavaScript / HTML5
+            Canvas Tetris game (no build step, no dependencies). Read
+            CLAUDE.md first to understand the architecture (game.js holds all
+            game logic as top-level functions over module-level state: board,
+            current, next, score, lines, level, paused, gameOver, dropAccum,
+            dropInterval, animId).
+
+            Goal: label the issue correctly and post a technical diagnosis
+            comment that a developer can use as a starting point to implement
+            the fix or feature. Do NOT write any code and do NOT open a pull
+            request — analysis only.
+
+            Steps:
+
+            1. Read the issue:
+               gh issue view ${{ github.event.issue.number }} --json title,body,labels,comments
+
+            2. Labels — get the repo's existing label catalog:
+               gh label list
+               Choose ONLY from the labels that already exist in the repo
+               (e.g. bug, enhancement, documentation, question, accessibility,
+               duplicate, good first issue, help wanted, invalid, wontfix —
+               but always check the live list, don't assume). NEVER create a
+               new label. Do not remove labels a human already added; you may
+               add more if they fit. Apply with:
+               gh issue edit ${{ github.event.issue.number }} --add-label "label-name"
+               You may add more than one label if appropriate (e.g. "bug" and
+               "accessibility").
+
+            3. Investigate the code — use Read/Grep/Glob on game.js,
+               index.html and style.css to identify the concrete functions or
+               areas involved (e.g. collide, tryRotate, clearLines,
+               lockPiece, spawn, merge, ghostY, loop, the keydown listener,
+               PIECES, ROWS/COLS/BLOCK constants, canvas markup, CSS rules).
+               Do not guess — cite what you actually found by reading the
+               files.
+
+            4. Post the diagnosis as an issue comment, written in English,
+               with this structure:
+               - **Summary** — what the issue reports/requests, in 1-2 sentences.
+               - **Type & labels applied** — which labels you applied and why.
+               - **Relevant code** — specific files and functions, referenced
+                 like `game.js:collide()` or `index.html` (element/id).
+               - **Likely cause / what needs to change** — for bugs, your
+                 root-cause hypothesis; for features, where it fits in the
+                 architecture.
+               - **Suggested approach** — high-level implementation steps.
+               - **Acceptance criteria** — a short checklist to verify the fix.
+               - **Open questions** — anything that still needs clarification
+                 (omit this section if there is nothing to ask).
+
+            Hard rules:
+            - Never write the literal string "@claude" anywhere in the
+              comment body (it would re-trigger the @claude-mention workflow).
+            - Never edit the issue body/title — only add labels and comment.
+            - Never modify any file in the repository and never open a PR.
+            - Start the comment body with the exact HTML marker
+              `<!-- claude-triage -->` on its own first line, so it can be
+              recognized later.
+            - Idempotency: before posting, check
+              gh issue view ${{ github.event.issue.number }} --json comments
+              for an existing comment (by this bot) that starts with
+              `<!-- claude-triage -->`. If one exists, UPDATE it instead of
+              creating a new one:
+              gh api --method PATCH /repos/${{ github.repository }}/issues/comments/<comment_id> -f body=@- <<< "$COMMENT_BODY"
+              Otherwise, create a new comment with:
+              gh issue comment ${{ github.event.issue.number }} --body-file <path-to-file>
+              (write the comment body to a temp file first to avoid shell
+              escaping issues with multi-line content).
