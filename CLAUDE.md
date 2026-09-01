@@ -28,8 +28,8 @@ Three files, no modules:
 
 ### Core mechanics (game.js)
 
-- **Board**: `ROWS × COLS` matrix; each cell is `0` (empty) or a piece color index `1–7`.
-- **Pieces**: `PIECES` are square matrices; `rotateCW` transposes + reverses rows to rotate. `tryRotate` applies wall kicks by trying x-offsets `[0, -1, 1, -2, 2]` until a non-colliding position is found.
+- **Board**: `ROWS × COLS` matrix; each cell is `0` (empty) or a piece color index `1–8`.
+- **Pieces**: `PIECES` are square matrices; `rotateCW` transposes + reverses rows to rotate. `tryRotate` applies wall kicks by trying x-offsets `[0, -1, 1, -2, 2]` until a non-colliding position is found. Piece `8` ("Nut") is a 3×3 ring with an empty center (`[[8,8,8],[8,0,8],[8,8,8]]`); once locked, that center cell is a permanent empty board cell (surrounded on all sides by the ring), so its row can never be cleared until the ring itself is cleared from above. `drawNutHole` (in `game.js`, near `drawBlock`) draws a ring outline over the hole while the piece is falling/ghosted/previewed; once merged into `board` there is no special-casing — the hole is just a `0` cell like any other gap.
 - **Collision**: `collide(shape, ox, oy)` is the single source of truth for both movement and rotation legality, checking bounds and existing board cells.
 - **Game loop**: `loop(ts)` runs via `requestAnimationFrame`, accumulates `dt` into `dropAccum`, and advances the piece one row (or locks it) once `dropAccum >= dropInterval`.
 - **Locking/scoring**: `lockPiece` → `merge` (writes piece into `board`) → `clearLines` (scans bottom-up, splices full rows, unshifts empty rows at top, awards `LINE_SCORES[cleared] * level`) → `spawn` (promotes `next` to `current`, generates new `next`; if the new piece immediately collides, calls `endGame`).
